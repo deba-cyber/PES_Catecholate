@@ -24,3 +24,10 @@ namespace PES_PARAMS	{
 	extern const std::vector<double> alpha_vect = {6.9, 2.58, 2.60, 2.50, 2.0, 2.0};
 }
 
+namespace SD_PARAMS {
+    extern const std::vector<int> mode_id_vect = {1,5,7,10,13,27,29};
+    extern const std::vector<int> mode_id_2_optimise = {1,5,7,10,13,27,29};
+    extern const std::vector<double> startvect = {-2.0,0.5,0.1,2.8,-0.1,0.1,1.0};
+}
+
+

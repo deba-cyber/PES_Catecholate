@@ -51,4 +51,21 @@ namespace PES_PARAMS	{
 	extern const std::string pot_savefile;	
 }
 
+namespace SD_PARAMS	{
+	inline constexpr int MAXITR = 1000;
+	inline constexpr double grad_thr = 1e-02;
+	inline constexpr double alpha_init_4_linsrch = 0.005;	// initial alpha for line search in each iteration
+	inline constexpr double beta_4_linsrch = 0.01;			
+	inline constexpr double tau_4_linsrch = 0.5;
+	inline constexpr double first_drv_coeff_1 = 0.833333333333333E-01; 
+	inline constexpr double first_drv_coeff_2 = -0.666666666666667E+00;
+	inline constexpr double first_drv_coeff_3 = 0.594762334620620E-16;
+	inline constexpr double first_drv_coeff_4 = 0.666666666666667E+00;
+	inline constexpr double first_drv_coeff_5 = -0.833333333333333E-01;
+	inline constexpr double drv_stepsize = 0.01;
+	extern const std::vector<int> mode_id_vect;
+	extern const std::vector<int> mode_id_2_optimise;
+	extern const std::vector<double> startvect;
+}
+
 # endif

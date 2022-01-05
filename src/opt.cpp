@@ -114,7 +114,7 @@ int main()	{
 	double alpha_cur_linsrch;
 	std::vector<double> cur_test_loc_4_alpha;
 	std::vector<double> tmp_direction_vect_4_alpha;
-	while (grad_norm > SD_PARAMS::grad_thr && counter < SD_PARAMS::MAXITR)	{
+	while (grad_norm > SD_PARAMS::grad_thr && counter < SD_PARAMS::MAXITR && alpha_cur_linsrch > SD_PARAMS::alpha_thr)	{
 		int alpha_ctr = 1;
 		alpha_cur_linsrch = SD_PARAMS::alpha_init_4_linsrch;
 		while (alpha_ctr != 0)	{

@@ -6,6 +6,7 @@
 # include <cmath>
 # include <vector>
 # include <string>
+# include <algorithm>
 
 
 
@@ -62,7 +63,6 @@ int main()	{
 	PES_catecholate pesobj(prefact_4_scaled_normal_coords,PES_PARAMS::V_eq,PES_PARAMS::morse_a,
 			Mode_flag_TS,REF_TS,REF_EQM,l_TS,EQM_rot_mat,l_eqm,mass_sqrt,ratio_TS,
 			Q_K_TS_scaled,freq_EQM,B_fit_vect,PES_PARAMS::alpha_vect);
-	PES_catecholate* pesobjptr = &pesobj;	// Pointer to pesobj
 	/*******************************************************/
 	/*******************************************************/
 	/****************** Creating Diabat object ************/
@@ -84,6 +84,133 @@ int main()	{
 	/*******************************************************/
 	/*******************************************************/
 	/**************** Optimisation ************************/
+	std::vector<int> linenovect_2_optimise = Get_lineno_vect(SD_PARAMS::N_pts_2_optimise);
+	std::vector<int> linenovect_startvect = Get_lineno_vect(45);
+	std::vector<std::vector<double>> all_grid_2_optimise = Get_all_lines_multvect(linenovect_2_optimise,dummyvec_double,
+			SD_PARAMS::gridfile_2_optimise);
+//	std::vector<std::vector<double>> startvect = Get_all_lines_multvect(linenovect_startvect,dummyvec_double,
+//			SD_PARAMS::gridfile_2_start);
+	///------------------------------------------------------///
+	///--------- Vectors to be saved as final outputs -------///		
+	std::vector<std::vector<double>> opt_multgrid;		// final output grid 
+	std::vector<double> V_opt;	// potential corresponding to optimised grid 
+	///------------------------------------------------------///
+	// Starting vector for optimisation to be updated after each step //
+	/**
+	std::vector<double> X0_fulldim(PES_PARAMS::N_vibs);
+	std::vector<double> Q1_grid(45);
+	std::vector<int> gridvect = {45,111};
+	STRIDE_ARR_BACK_N_FORTH strideobj(gridvect);
+	for (unsigned int i=0; i<Q1_grid.size(); i++)	{
+		Q1_grid[i] = -0.1-0.1*i;
+	}
+	int start_counter = 0;
+	for_each(SD_PARAMS::mode_id_2_optimise.begin(),SD_PARAMS::mode_id_2_optimise.end(),[&X0_fulldim,&start_counter](const int& elem){
+			X0_fulldim[elem-1] = SD_PARAMS::startvect[start_counter];
+			start_counter++;});
+	// gradient vector dimension equal to no of coordinates to optimize //
+	std::vector<double> cur_grad_vect;
+	// Full dimensional gradient vector with other coordinates at zero //
+	std::vector<double> cur_grad_vect_fulldim(PES_PARAMS::N_vibs);
+	// 2D vector corresponding to all 1D displacements along modes to optimise // 
+	std::vector<std::vector<double>> all_onedim_dsplcmnts;
+	int start_id;
+	int end_id;
+	std::cin >> start_id;
+	std::cin	>> end_id;
+	for (int i=SD_PARAMS::opt_grid_start_id; i<SD_PARAMS::opt_grid_end_id; i++)	{
+//	for (unsigned int i=0; i<all_grid_2_optimise.size(); i++)	{
+		for_each(SD_PARAMS::mode_id_fixed.begin(),SD_PARAMS::mode_id_fixed.end(),
+				[&X0_fulldim,&all_grid_2_optimise,&i](const int& elem){X0_fulldim[elem-1] = all_grid_2_optimise[i][elem-1];});
+		std::vector<int> cur_id_vect = strideobj.onedim_indices(i+1);
+		int Q1_id = cur_id_vect[0];
+		for_each(SD_PARAMS::mode_id_2_optimise.begin(),SD_PARAMS::mode_id_2_optimise.end(),
+				[&X0_fulldim,&Q1_id,&startvect](const int& elem){X0_fulldim[elem-1] = startvect[Q1_id][elem-1];});
+		all_onedim_dsplcmnts = get_all_onedim_grids_4_grad(X0_fulldim);
+		std::vector<std::vector<double>> multgrid_4_grad = 
+			get_multidim_grid_from_all_onedim_grids(all_onedim_dsplcmnts,X0_fulldim);
+		std::vector<double> multidim_grid_4_func_eval;
+		for_each(multgrid_4_grad.begin(),multgrid_4_grad.end(),[&diabatobj,&pesobj,&multidim_grid_4_func_eval]
+				(std::vector<double>& elem){std::vector<double> Q_TS_scaled_cur = elem;
+				std::vector<double> V11_V22 = diabatobj.Get_tot_V11_and_V22(Q_TS_scaled_cur,pesobj);
+				double V12_sqr = pesobj.V12_sqr(Q_TS_scaled_cur);
+				double E_adiabat_cur = Get_Adiabat(V11_V22,V12_sqr);
+				multidim_grid_4_func_eval.emplace_back(E_adiabat_cur);
+				});
+		std::vector<std::vector<double>> func_4_grad = split_onedim_vector(multidim_grid_4_func_eval,5);
+		multidim_grid_4_func_eval.clear();
+		cur_grad_vect = get_first_drv(func_4_grad,SD_PARAMS::drv_stepsize);
+		int grad_cnt = 0;
+		for_each(SD_PARAMS::mode_id_2_optimise.begin(),SD_PARAMS::mode_id_2_optimise.end(),[&cur_grad_vect_fulldim,&cur_grad_vect,&grad_cnt](const int& elem){
+				cur_grad_vect_fulldim[elem-1] = cur_grad_vect[grad_cnt];
+				grad_cnt++;});
+		grad_cnt = 0;
+		double grad_norm = Vec_Norm(cur_grad_vect_fulldim);
+		std::vector<double> cur_direction_vect;
+		int counter = 0;
+		double alpha_cur_linsrch = SD_PARAMS::alpha_init_4_linsrch;
+		std::vector<double> cur_test_loc_4_alpha;
+		std::vector<double> tmp_direction_vect_4_alpha;
+		while (grad_norm > SD_PARAMS::grad_thr && counter < SD_PARAMS::MAXITR && alpha_cur_linsrch > SD_PARAMS::alpha_thr)	{
+			int alpha_ctr = 1;
+			while (alpha_ctr != 0)	{
+				cur_test_loc_4_alpha = X0_fulldim;
+				tmp_direction_vect_4_alpha = cur_grad_vect_fulldim;
+				multiply_w_const(tmp_direction_vect_4_alpha,-1.0/grad_norm);
+				multiply_w_const(tmp_direction_vect_4_alpha,alpha_cur_linsrch);
+				add_2_vect(cur_test_loc_4_alpha,tmp_direction_vect_4_alpha);
+				double E_adiabat_cur_4_alpha;
+				double E_adiabat_prv_4_alpha;
+				{
+					std::vector<double> V11_V22 = diabatobj.Get_tot_V11_and_V22(cur_test_loc_4_alpha,pesobj);
+					std::vector<double> V11_V22_prv = diabatobj.Get_tot_V11_and_V22(X0_fulldim,pesobj);
+					double V12_sqr = pesobj.V12_sqr(cur_test_loc_4_alpha);
+					double V12_sqr_prv = pesobj.V12_sqr(X0_fulldim); 
+					E_adiabat_cur_4_alpha = Get_Adiabat(V11_V22,V12_sqr);	
+					E_adiabat_prv_4_alpha = Get_Adiabat(V11_V22_prv,V12_sqr_prv);
+				}
+				if (E_adiabat_cur_4_alpha > E_adiabat_prv_4_alpha+((pow(grad_norm,2.))*alpha_cur_linsrch*SD_PARAMS::beta_4_linsrch))	{
+					alpha_cur_linsrch *= SD_PARAMS::tau_4_linsrch;
+				}
+				else
+					alpha_ctr = 0;
+			}
+			cur_direction_vect = cur_grad_vect_fulldim;
+			multiply_w_const(cur_direction_vect,-1.0/grad_norm);
+			multiply_w_const(cur_direction_vect,alpha_cur_linsrch);
+			add_2_vect(X0_fulldim,cur_direction_vect);
+			all_onedim_dsplcmnts = get_all_onedim_grids_4_grad(X0_fulldim);	
+			multgrid_4_grad = get_multidim_grid_from_all_onedim_grids(all_onedim_dsplcmnts,X0_fulldim);
+			all_onedim_dsplcmnts = get_all_onedim_grids_4_grad(X0_fulldim);	
+			multgrid_4_grad = get_multidim_grid_from_all_onedim_grids(all_onedim_dsplcmnts,X0_fulldim);
+			for_each(multgrid_4_grad.begin(),multgrid_4_grad.end(),[&diabatobj,&pesobj,&multidim_grid_4_func_eval]
+					(std::vector<double>& elem){std::vector<double> Q_TS_scaled_cur = elem;
+					std::vector<double> V11_V22 = diabatobj.Get_tot_V11_and_V22(Q_TS_scaled_cur,pesobj);
+					double V12_sqr = pesobj.V12_sqr(Q_TS_scaled_cur);
+					double E_adiabat_cur = Get_Adiabat(V11_V22,V12_sqr);
+					multidim_grid_4_func_eval.emplace_back(E_adiabat_cur);
+					});
+			func_4_grad = split_onedim_vector(multidim_grid_4_func_eval,5);
+			cur_grad_vect = get_first_drv(func_4_grad,SD_PARAMS::drv_stepsize);
+			make_vect_zero(cur_grad_vect_fulldim);
+			for_each(SD_PARAMS::mode_id_2_optimise.begin(),SD_PARAMS::mode_id_2_optimise.end(),[&cur_grad_vect_fulldim,&cur_grad_vect,&grad_cnt](const int& elem){
+					cur_grad_vect_fulldim[elem-1] = cur_grad_vect[grad_cnt];
+					grad_cnt++;});
+			grad_norm = Vec_Norm(cur_grad_vect_fulldim);
+			counter++;
+			std::cout	<<	" counter "	<< counter	<< " alpha "	<< alpha_cur_linsrch	<< " grad norm	"	<< grad_norm	<< "\n"; 
+		}
+		std::vector<double> V11_V22_opt = diabatobj.Get_tot_V11_and_V22(X0_fulldim,pesobj);
+		double V12_sqr_opt = pesobj.V12_sqr(X0_fulldim);
+		double E_adiabat_opt = Get_Adiabat(V11_V22_opt,V12_sqr_opt);
+		opt_multgrid.push_back(X0_fulldim);
+		V_opt.emplace_back(E_adiabat_opt);
+		make_vect_zero(X0_fulldim);
+	}
+	printtwodimvect(opt_multgrid);
+	printonedimvect(V_opt);
+**/	
+	
 	std::vector<double> X0_fulldim(PES_PARAMS::N_vibs);		// location to be updated in each iteration
 	for (size_t i=0; i<SD_PARAMS::mode_id_vect.size(); i++)	{
 		X0_fulldim[SD_PARAMS::mode_id_vect[i]-1] = SD_PARAMS::startvect[i];
@@ -97,7 +224,7 @@ int main()	{
 		std::vector<std::vector<double>> func_4_grad;
 		for (size_t i=0; i<multgrid_4_grad.size(); i++)	{
 			std::vector<double> Q_TS_scaled_cur = multgrid_4_grad[i];
-			std::vector<double> V11_V22 = diabatobj.Get_tot_V11_and_V22(Q_TS_scaled_cur,pesobjptr);
+			std::vector<double> V11_V22 = diabatobj.Get_tot_V11_and_V22(Q_TS_scaled_cur,pesobj);
 			double V12_sqr = pesobj.V12_sqr(Q_TS_scaled_cur);
 			double E_adiabat_cur = Get_Adiabat(V11_V22,V12_sqr);
 			multidim_grid_4_func_eval.emplace_back(E_adiabat_cur);	
@@ -114,7 +241,7 @@ int main()	{
 	double alpha_cur_linsrch;
 	std::vector<double> cur_test_loc_4_alpha;
 	std::vector<double> tmp_direction_vect_4_alpha;
-	while (grad_norm > SD_PARAMS::grad_thr && counter < SD_PARAMS::MAXITR && alpha_cur_linsrch > SD_PARAMS::alpha_thr)	{
+	while (grad_norm > SD_PARAMS::grad_thr && counter < SD_PARAMS::MAXITR)	{
 		int alpha_ctr = 1;
 		alpha_cur_linsrch = SD_PARAMS::alpha_init_4_linsrch;
 		while (alpha_ctr != 0)	{
@@ -126,8 +253,8 @@ int main()	{
 			double E_adiabat_cur_4_alpha;
 			double E_adiabat_prv_4_alpha;
 			{
-				std::vector<double> V11_V22 = diabatobj.Get_tot_V11_and_V22(cur_test_loc_4_alpha,pesobjptr);
-				std::vector<double> V11_V22_prv = diabatobj.Get_tot_V11_and_V22(X0_fulldim,pesobjptr);
+				std::vector<double> V11_V22 = diabatobj.Get_tot_V11_and_V22(cur_test_loc_4_alpha,pesobj);
+				std::vector<double> V11_V22_prv = diabatobj.Get_tot_V11_and_V22(X0_fulldim,pesobj);
 				double V12_sqr = pesobj.V12_sqr(cur_test_loc_4_alpha);
 				double V12_sqr_prv = pesobj.V12_sqr(X0_fulldim); 
 				E_adiabat_cur_4_alpha = Get_Adiabat(V11_V22,V12_sqr);	
@@ -149,7 +276,7 @@ int main()	{
 		std::vector<std::vector<double>> func_4_grad;
 		for (size_t i=0; i<multgrid_4_grad.size(); i++)	{
 			std::vector<double> Q_TS_scaled_cur = multgrid_4_grad[i]; 
-			std::vector<double> V11_V22 = diabatobj.Get_tot_V11_and_V22(Q_TS_scaled_cur,pesobjptr);
+			std::vector<double> V11_V22 = diabatobj.Get_tot_V11_and_V22(Q_TS_scaled_cur,pesobj);
 			double V12_sqr = pesobj.V12_sqr(Q_TS_scaled_cur);
 			double E_adiabat_cur = Get_Adiabat(V11_V22,V12_sqr);
 			multidim_grid_4_func_eval.emplace_back(E_adiabat_cur);
@@ -164,12 +291,15 @@ int main()	{
 		counter++;
 		std::cout	<<	" counter "	<< counter	<< " alpha "	<< alpha_cur_linsrch	<< " grad norm	"	<< grad_norm	<< "\n"; 
 	}
-	std::vector<double> V11_V22_opt = diabatobj.Get_tot_V11_and_V22(X0_fulldim,pesobjptr);
+	std::vector<double> V11_V22_opt = diabatobj.Get_tot_V11_and_V22(X0_fulldim,pesobj);
 	double V12_sqr_opt = pesobj.V12_sqr(X0_fulldim);
 	double E_adiabat_opt = Get_Adiabat(V11_V22_opt,V12_sqr_opt);
 	std::cout	<< X0_fulldim[0]	<< "	"	<< X0_fulldim[4]	<< "	"	<< X0_fulldim[6]	<<	
-		"	"	<< X0_fulldim[9]	<<	"	"	<< X0_fulldim[12]	<< "	"	<< X0_fulldim[26]	<< "	"
+		"	"	<< X0_fulldim[9]	<<	"	"	<< X0_fulldim[12]	<< "	"	<< X0_fulldim[15]	<<	"	"	<<
+		X0_fulldim[20]	<<	"	"	<<	X0_fulldim[21]	<<	"	"	<< X0_fulldim[22]	<<	"	"	<<	
+		X0_fulldim[23]	<<	"	"	<<	X0_fulldim[26]	<< "	"
 		<< X0_fulldim[28]	<< "\n";
+	printonedimvect(X0_fulldim);
 	printonedimvect(cur_grad_vect);
 	std::cout	<< E_adiabat_opt	<< "\n";
 	return EXIT_SUCCESS;
